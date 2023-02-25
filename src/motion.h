@@ -2,7 +2,7 @@
 
 #include <string>
 
-class MyRestCall;
+class MotionRestCall;
 namespace cv {
     class Mat;
 }
@@ -14,5 +14,5 @@ class MotionDetect {
 public:
     MotionDetect() = default;
     
-    int run(MyRestCall& rest);
+    int run(MotionRestCall& rest);
 };

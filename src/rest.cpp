@@ -6,7 +6,6 @@
 #include <boost/fusion/adapted.hpp>
 
 #include <iostream>
-#include <chrono>
 #include <iomanip>
 
 using namespace std;
@@ -30,15 +29,27 @@ BOOST_FUSION_ADAPT_STRUCT(
     (string, motion)
 )
 
-bool MyRestCall::call(string motionState) {
-    std::time_t t = time(nullptr);
+bool MotionRestCall::skipFastCall(const std::string motionState) {
+    std::time_t now = time(nullptr);
 
-    if (1 || chrono::system_clock::now() < _nextFire) {
-        clog << std::put_time(std::localtime(&t), "%c %Z") << " skipping Rest::call()\n";
-        return false;
+    if (chrono::system_clock::now() < _nextFire) {
+        const std::time_t next_fire = std::chrono::system_clock::to_time_t(_nextFire);
+        clog << std::put_time(std::localtime(&now), "%c %Z")
+             << " skipping call(" << motionState << ") until: "
+             << std::put_time(std::localtime(&next_fire), "%c %Z")
+             << endl;
+        return true;
     }
     _nextFire = chrono::system_clock::now() + _skipPeriod;
-    clog << std::put_time(std::localtime(&t), "%c %Z") << " Rest::call(" << motionState << ")\n";
+    clog << std::put_time(std::localtime(&now), "%c %Z") << " call(" << motionState << ")\n";
+    return false;
+}
+
+bool MotionRestCall::call(const string motionState) {
+
+    if (skipFastCall(motionState)) {
+        return false;
+    }
 
     // Construct our own ioservice.
     boost::asio::io_service ioservice;
@@ -61,7 +72,7 @@ bool MyRestCall::call(string motionState) {
             Post data_object = {motion: motionState};
             // Asynchronously connect to a server and fetch some data.
             auto reply = RequestBuilder(ctx)
-                .Post("http://192.168.88.215:30123/api/webhook/baby-motion-DTY")              // URL
+                .Post(_webhook)
                 .Header("X-Client", "RESTC_CPP")                   // Optional header
                 //.BasicAuthentication("alice", "12345")
                 .Data(data_object)                                 // Data object to send
@@ -94,4 +105,13 @@ bool MyRestCall::call(string motionState) {
     worker.join();
 
     return true;
+}
+
+bool MotionRestCall::notify() {
+    if (call("on")) {
+        std::this_thread::sleep_for(_skipPeriod + 1s);
+        call("off");
+        return true;
+    }
+    return false;
 }

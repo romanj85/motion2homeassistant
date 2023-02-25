@@ -29,44 +29,40 @@ void MotionDetect::saveImage(cv::Mat toSave, std::string file) {
     char timeString[std::size("yyyy-mm-dd hh:mm:ss")+1];
     std::strftime(std::data(timeString), std::size(timeString), "%F %T", std::localtime(&time));
     putText(toSave, timeString, Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.75, Scalar(0,0,255),2);
-    imwrite("/tmp/last.jpg", toSave);
+    imwrite(file, toSave);
     //imshow("saved", toSave);
 }
 
-int MotionDetect::run(MyRestCall& rest) {
-    Mat frame, gray, frameDelta, thresh, firstFrame;
+int MotionDetect::run(MotionRestCall& rest) {
+    Mat frame, gray, frameDelta, thresh, previousFrame;
     vector<vector<Point> > cnts;
-    VideoCapture camera(0); //open camera
+    VideoCapture camera(0);
 
-    //set the video size to 512x288 to process faster
-    //camera.set(3, 640);
-    //camera.set(4, 360);
-    //camera.set(3, 512);
-    //camera.set(4, 288);
-    //camera.set(3, 640);
-    //camera.set(4, 480);
     camera.set(3, 1280);
     camera.set(4, 720);
-    //camera.set(3, 1920);
-    //camera.set(4, 1080);
 
     camera.read(frame);
-    cvtColor(frame, firstFrame, COLOR_BGR2GRAY);
-    GaussianBlur(firstFrame, firstFrame, Size(21, 21), 0);
+    cvtColor(frame, previousFrame, COLOR_BGR2GRAY);
+    GaussianBlur(previousFrame, previousFrame, Size(21, 21), 0);
     std::this_thread::sleep_for(1s);
 
     while(camera.read(frame)) {
-        saveImage(frame.clone(), "/tmp/last.jpg");
-        //convert to grayscale and set the first frame
+        //saveImage(frame.clone(), "/tmp/last.jpg");
+
+        // convert to grayscale and set the first frame
         cvtColor(frame, gray, COLOR_BGR2GRAY);
         GaussianBlur(gray, gray, Size(21, 21), 0);
-        //compute difference between first frame and current frame
-        absdiff(firstFrame, gray, frameDelta);
-        firstFrame = gray.clone();        
+
+        // compute difference between first frame and current frame
+        absdiff(previousFrame, gray, frameDelta);
+        previousFrame = gray.clone();
+        //imshow("Delta", frameDelta);
+
+        // find the contours
         threshold(frameDelta, thresh, 25, 255, THRESH_BINARY);
-        
         dilate(thresh, thresh, Mat(), Point(-1,-1), 2);
         findContours(thresh, cnts, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
         bool motionDetected{false};
 
         for(int i = 0; i< cnts.size(); i++) {
@@ -75,19 +71,12 @@ int MotionDetect::run(MyRestCall& rest) {
             }
             // may be several times / depends on contours
             motionDetected = true;
+            //putText(frame, "Motion Detected", Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.75, Scalar(0,0,255),2);
             break;
         }
-        if (motionDetected && rest.call("on")) {
-            //std::time_t t = time(nullptr);
-            //clog << std::put_time(std::localtime(&t), "%c %Z") << " Motion Detected\n";
+        //imshow("Camera", frame);
 
-            //putText(frame, "Motion Detected", Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.75, Scalar(0,0,255),2);
-            //imshow("Camera", frame);
-
-            std::this_thread::sleep_for(3s);
-            rest.call("off");
-        } else {
-            //imshow("Camera", frame);
+        if (!motionDetected || !rest.notify()) {
             std::this_thread::sleep_for(1s);
         }
         
